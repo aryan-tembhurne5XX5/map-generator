@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import type { PointerEvent } from "react";
+import { downloadSurveyPDF } from "./utils/exportSurvey";
 
 import {
   RotateCcw,
@@ -127,6 +128,82 @@ function App() {
     if (!Number.isFinite(value) || value <= 0) return;
 
     setRoadWidth(toMetres(value, unit));
+  };
+  // SURVEY INFORMATION
+
+  const [surveyInfo, setSurveyInfo] = useState({
+    surveyNumber: "125/1",
+    plotNumber: "125/1",
+
+    adjacentPlots: {
+      AB: "125/2",
+      BC: "126",
+      CD: "125/3",
+      DA: "124"
+    },
+
+    bearings: {
+      AB: "N 87° 15' E",
+      BC: "S 02° 30' E",
+      CD: "S 87° 45' W",
+      DA: "N 01° 45' W"
+    },
+
+    roadNames: {
+      AB: "",
+      BC: "Village Road",
+      CD: "Village Road",
+      DA: "Village Road"
+    }
+  });
+
+  const updateSurveyField = (
+    field: string,
+    value: string
+  ) => {
+    setSurveyInfo(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const updateAdjacentPlot = (
+    side: keyof typeof surveyInfo.adjacentPlots,
+    value: string
+  ) => {
+    setSurveyInfo(prev => ({
+      ...prev,
+      adjacentPlots: {
+        ...prev.adjacentPlots,
+        [side]: value
+      }
+    }));
+  };
+
+  const updateBearing = (
+    side: keyof typeof surveyInfo.bearings,
+    value: string
+  ) => {
+    setSurveyInfo(prev => ({
+      ...prev,
+      bearings: {
+        ...prev.bearings,
+        [side]: value
+      }
+    }));
+  };
+
+  const updateRoadName = (
+    side: keyof typeof surveyInfo.roadNames,
+    value: string
+  ) => {
+    setSurveyInfo(prev => ({
+      ...prev,
+      roadNames: {
+        ...prev.roadNames,
+        [side]: value
+      }
+    }));
   };
 
   const selectedRoadCount = Object.values(roadSides)
@@ -265,8 +342,13 @@ function App() {
   const calculatedOffsetX =
     (SVG_WIDTH - worldWidth * calculatedScale) / 2;
 
+  const HEADER_SPACE = 85;
+  const BOTTOM_SPACE = 35;
+
   const calculatedOffsetY =
-    (SVG_HEIGHT - worldHeight * calculatedScale) / 2;
+    HEADER_SPACE +
+    (SVG_HEIGHT - HEADER_SPACE - BOTTOM_SPACE -
+      worldHeight * calculatedScale) / 2;
 
   // Keep the canvas coordinate system stable while dragging.
 
@@ -651,33 +733,68 @@ function App() {
   // EXPORT
   // --------------------------------------
 
-  const handleExport = () => {
-
+  const handleExport = async () => {
     const svg = document.getElementById("plot-svg");
 
-    if (!svg) return;
+    if (!svg) {
+      setError("Drawing not found.");
+      return;
+    }
 
-    const clone = svg.cloneNode(true) as SVGSVGElement;
+    try {
+      const roadNames = Object.entries(roadSides)
+        .filter(([, selected]) => selected)
+        .map(([side]) => side);
 
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const reportLines = [
+        "PLOT INFORMATION",
+        `Survey Number: ${surveyInfo.surveyNumber}`,
+        `Plot Number: ${surveyInfo.plotNumber}`,
+        `Area: ${convertArea(area, unit).toFixed(2)} ${unit === "m" ? "m²" : "ft²"}`,
+        `Perimeter: ${fromMetres(perimeter, unit).toFixed(2)} ${unit}`,
 
-    const blob = new Blob(
-      [new XMLSerializer().serializeToString(clone)],
-      { type: "image/svg+xml;charset=utf-8" }
-    );
+        "SIDE MEASUREMENTS",
 
-    const url = URL.createObjectURL(blob);
+        ...(["AB", "BC", "CD", "DA"] as const).map(
+          (side, index) =>
+            `${side}: ${fromMetres(sides[side], unit).toFixed(2)} ${unit} | Bearing: ${surveyInfo.bearings[side]}`
+        ),
 
-    const link = document.createElement("a");
+        "INTERIOR ANGLES",
 
-    link.href = url;
+        `Angle A: ${angles[0].toFixed(2)}°`,
+        `Angle B: ${angles[1].toFixed(2)}°`,
+        `Angle C: ${angles[2].toFixed(2)}°`,
+        `Angle D: ${angles[3].toFixed(2)}°`,
 
-    link.download = "plotrix-map.svg";
+        "DIAGONALS",
 
-    link.click();
+        `AC: ${fromMetres(diagonals.AC, unit).toFixed(2)} ${unit}`,
+        `BD: ${fromMetres(diagonals.BD, unit).toFixed(2)} ${unit}`,
 
-    URL.revokeObjectURL(url);
+        "ROAD INFORMATION",
 
+        `Road sides: ${Object.entries(roadSides)
+          .filter(([, selected]) => selected)
+          .map(([side]) => side)
+          .join(", ") || "None"
+        }`,
+
+        `Road width: ${fromMetres(roadWidth, unit).toFixed(2)} ${unit}`
+      ];
+
+      await downloadSurveyPDF(
+        svg as unknown as SVGSVGElement,
+        reportLines,
+        "Plotrix-Survey.pdf"
+      );
+
+      setError("");
+
+    } catch (error) {
+      console.error("PDF export failed:", error);
+      setError("Unable to export PDF. Please try again.");
+    }
   };
 
   // ======================================
@@ -717,7 +834,7 @@ function App() {
 
             <Download size={16} />
 
-            Export
+            Export PDF
 
           </button>
 
@@ -856,6 +973,97 @@ function App() {
               </div>
 
             )}
+
+          </div>
+
+          <div className="divider" />
+
+          {/* SURVEY DETAILS */}
+
+          <div className="survey-section">
+
+            <h3>Survey information</h3>
+
+            <p className="subtitle">
+              Enter property and neighbouring survey details.
+            </p>
+
+            <div className="input-group">
+              <label>Survey number</label>
+
+              <input
+                type="text"
+                value={surveyInfo.surveyNumber}
+                onChange={e =>
+                  updateSurveyField("surveyNumber", e.target.value)
+                }
+                placeholder="e.g. 125/1"
+              />
+            </div>
+
+            <div className="input-group">
+              <label>Plot number</label>
+
+              <input
+                type="text"
+                value={surveyInfo.plotNumber}
+                onChange={e =>
+                  updateSurveyField("plotNumber", e.target.value)
+                }
+                placeholder="e.g. 125/1"
+              />
+            </div>
+
+            <h4>Boundary information</h4>
+
+            {(Object.keys(sides) as (keyof Sides)[]).map(side => (
+
+              <div className="survey-boundary-input" key={side}>
+
+                <strong>{side}</strong>
+
+                <div className="input-group">
+                  <label>Neighbouring survey number</label>
+
+                  <input
+                    type="text"
+                    value={surveyInfo.adjacentPlots[side]}
+                    onChange={e =>
+                      updateAdjacentPlot(side, e.target.value)
+                    }
+                    placeholder="e.g. 125/2"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>Bearing</label>
+
+                  <input
+                    type="text"
+                    value={surveyInfo.bearings[side]}
+                    onChange={e =>
+                      updateBearing(side, e.target.value)
+                    }
+                    placeholder="e.g. N 87° 15' E"
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>Road name (optional)</label>
+
+                  <input
+                    type="text"
+                    value={surveyInfo.roadNames[side]}
+                    onChange={e =>
+                      updateRoadName(side, e.target.value)
+                    }
+                    placeholder="e.g. Village Road"
+                  />
+                </div>
+
+              </div>
+
+            ))}
 
           </div>
 
@@ -1034,6 +1242,25 @@ function App() {
                 />
 
               )}
+              {/* SURVEY MAP HEADING */}
+
+              <g pointerEvents="none">
+
+
+
+                <text
+                  x={SVG_WIDTH - 35}
+                  y="35"
+                  textAnchor="end"
+                  fontFamily="Georgia, 'Times New Roman', serif"
+                  fontSize="13"
+                  fontStyle="italic"
+                  fill="#222222"
+                >
+                  SURVEY No. {surveyInfo.surveyNumber}
+                </text>
+
+              </g>
               {/* ROADS */}
 
               {roads.map(road => (
@@ -1077,7 +1304,7 @@ function App() {
                 strokeLinejoin="round"
               />
 
-              {/* SIDE MEASUREMENTS */}
+              {/* SURVEY BOUNDARY ANNOTATIONS */}
 
               {points.map((point, i) => {
 
@@ -1085,6 +1312,22 @@ function App() {
 
                 const p1 = transformed[i];
                 const p2 = transformed[(i + 1) % 4];
+
+                const side = (["AB", "BC", "CD", "DA"] as const)[i];
+
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+
+                const length = Math.hypot(dx, dy);
+
+                if (length === 0) return null;
+
+                const ux = dx / length;
+                const uy = dy / length;
+
+                // Outward normal
+                let nx = -uy;
+                let ny = ux;
 
                 const midX = (p1.x + p2.x) / 2;
                 const midY = (p1.y + p2.y) / 2;
@@ -1095,60 +1338,136 @@ function App() {
                 const centerY =
                   transformed.reduce((sum, p) => sum + p.y, 0) / 4;
 
-                // Direction from polygon centre towards the outside
-                const dx = midX - centerX;
-                const dy = midY - centerY;
+                if (
+                  nx * (midX - centerX) +
+                  ny * (midY - centerY) < 0
+                ) {
+                  nx *= -1;
+                  ny *= -1;
+                }
 
-                const magnitude = Math.hypot(dx, dy) || 1;
+                const roadAttached = roadSides[side];
 
-                // Identify the current side
-                const side = (["AB", "BC", "CD", "DA"] as const)[i];
+                // Keep annotations inside the plot if road occupies the outside.
+                const direction = roadAttached ? -1 : 1;
 
-                // Road selected: place label inside the plot.
-                // No road: place label outside as before.
-                const direction = roadSides[side] ? -1 : 1;
+                const offset = 30 * direction;
 
-                // Maintain consistent spacing from the plot boundary
-                const labelDistance = 25;
+                const labelX = midX + nx * offset;
+                const labelY = midY + ny * offset;
 
-                const labelX =
-                  midX + (dx / magnitude) * labelDistance * direction;
+                // Keep text readable regardless of side direction.
+                let rotation =
+                  Math.atan2(dy, dx) * 180 / Math.PI;
 
-                const labelY =
-                  midY + (dy / magnitude) * labelDistance * direction;
+                if (rotation > 90 || rotation < -90) {
+                  rotation += rotation > 90 ? -180 : 180;
+                }
 
-                const length = fromMetres(
+                const bearing = surveyInfo.bearings[side];
+
+                const adjacentPlot = surveyInfo.adjacentPlots[side];
+
+                const roadName = surveyInfo.roadNames[side];
+
+                const displayLength = fromMetres(
                   distance(point, next),
                   unit
                 );
 
-                let rotation =
-                  Math.atan2(
-                    p2.y - p1.y,
-                    p2.x - p1.x
-                  ) * 180 / Math.PI;
-
-                if (rotation > 90) rotation -= 180;
-                if (rotation < -90) rotation += 180;
+                const textTransform =
+                  `rotate(${rotation}, ${labelX}, ${labelY})`;
 
                 return (
 
-                  <text
-                    key={i}
-                    x={labelX}
-                    y={labelY}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fontFamily="Roboto Slab, serif"
-                    fontSize="20"
-                    fontWeight="500"
-                    fill="#171717"
-                    transform={`rotate(${rotation}, ${labelX}, ${labelY})`}
-                  >
+                  <g key={side} pointerEvents="none">
 
-                    {length.toFixed(2)} {unit}
+                    {/* BEARING */}
 
-                  </text>
+                    <text
+                      x={labelX}
+                      y={labelY - 9}
+                      textAnchor="middle"
+                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontSize="14"
+                      fontStyle="italic"
+                      fill="#222222"
+                      transform={textTransform}
+                    >
+                      {bearing}
+                    </text>
+
+                    {/* SIDE LENGTH */}
+
+                    <text
+                      x={labelX}
+                      y={labelY + 12}
+                      textAnchor="middle"
+                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontSize="13"
+                      fill="#222222"
+                      transform={textTransform}
+                    >
+                      {displayLength.toFixed(2)}
+                    </text>
+
+                    {/* NEIGHBOURING SURVEY NUMBER */}
+
+                    {adjacentPlot && (() => {
+
+                      const neighbourOffset = roadAttached
+                        ? roadWidthPx + 38
+                        : 78;
+
+                      const neighbourX = midX + nx * neighbourOffset;
+                      const neighbourY = midY + ny * neighbourOffset;
+
+                      return (
+                        <text
+                          x={neighbourX}
+                          y={neighbourY}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontFamily="Georgia, 'Times New Roman', serif"
+                          fontSize="17"
+                          fontStyle="italic"
+                          fill="#252525"
+                        >
+                          {adjacentPlot}
+                        </text>
+                      );
+
+                    })()}
+
+                    {/* ROAD NAME */}
+
+                    {roadAttached && roadName && (() => {
+
+                      // Position the name inside the road surface.
+                      const roadNameOffset = roadWidthPx * 0.78;
+
+                      const roadLabelX = midX + nx * roadNameOffset;
+                      const roadLabelY = midY + ny * roadNameOffset;
+
+                      return (
+                        <text
+                          x={roadLabelX}
+                          y={roadLabelY}
+                          textAnchor="middle"
+                          dominantBaseline="middle"
+                          fontFamily="Georgia, 'Times New Roman', serif"
+                          fontSize="14"
+                          fontStyle="italic"
+                          fill="#222222"
+                          transform={`rotate(${rotation}, ${roadLabelX}, ${roadLabelY})`}
+                        >
+                          {roadName.toUpperCase()}
+                        </text>
+                      );
+
+                    })()}
+
+                  </g>
 
                 );
 
@@ -1188,7 +1507,7 @@ function App() {
 
               ))}
 
-              {/* AREA LABEL */}
+              {/* CENTRAL PLOT INFORMATION */}
 
               {(() => {
 
@@ -1204,42 +1523,28 @@ function App() {
 
                     <text
                       x={centerX}
-                      y={centerY - 30}
+                      y={centerY - 8}
                       textAnchor="middle"
-                      fontSize="17"
-                      fontFamily="Inter, sans-serif"
-                      fill="#ffffff"
-                      fontWeight="500"
+                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontSize="34"
+                      fontStyle="italic"
+                      fill="#222222"
                     >
-
-                      LAND PLOT
-
+                      {surveyInfo.plotNumber}
                     </text>
-
-                    <rect
-                      x={centerX - 80}
-                      y={centerY - 15}
-                      width="160"
-                      height="48"
-                      fill="#ffffff"
-                      stroke="#777777"
-                      strokeWidth="1"
-                    />
 
                     <text
                       x={centerX}
-                      y={centerY + 16}
+                      y={centerY + 28}
                       textAnchor="middle"
+                      fontFamily="Georgia, 'Times New Roman', serif"
                       fontSize="20"
-                      fontFamily="Roboto Slab, serif"
+                      fontStyle="italic"
                       fill="#222222"
-                      fontWeight="500"
                     >
-
                       {convertArea(area, unit).toFixed(2)}
                       {" "}
                       {unit === "m" ? "m²" : "ft²"}
-
                     </text>
 
                   </g>
@@ -1252,7 +1557,7 @@ function App() {
               {/* COMPASS */}
 
               <g
-                transform={`translate(${SVG_WIDTH - 80}, 80)`}
+                transform={`translate(${SVG_WIDTH - 80}, 100)`}
                 pointerEvents="none"
               >
 

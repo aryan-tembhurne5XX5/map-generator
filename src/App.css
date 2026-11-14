@@ -391,3 +391,88 @@ footer {
   color: #777b3f;
   font-size: 12px;
 }
+
+.survey-section {
+  margin-top: 18px;
+}
+
+.survey-section h4 {
+  margin: 18px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.survey-boundary-input {
+  padding: 13px 0;
+  border-bottom: 1px solid #eeeeea;
+}
+
+.survey-boundary-input>strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #92984e;
+  font-size: 13px;
+}
+
+.survey-section .input-group {
+  margin-bottom: 10px;
+}
+
+.survey-section input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* =================================
+   EDITOR LAYOUT IMPROVEMENTS
+================================= */
+
+.workspace {
+  align-items: start;
+}
+
+/* Left and right panels scroll independently */
+
+.workspace>.panel {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 155px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Keep the drawing visible */
+
+.canvas-section {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  min-width: 0;
+}
+
+/* Better canvas height */
+
+.canvas-container {
+  height: min(650px, calc(100vh - 210px));
+  min-height: 420px;
+  overflow: hidden;
+}
+
+/* Keep SVG fitted inside canvas */
+
+.canvas-container svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Cleaner scrolling */
+
+.workspace>.panel::-webkit-scrollbar {
+  width: 5px;
+}
+
+.workspace>.panel::-webkit-scrollbar-thumb {
+  background: #d5d5d0;
+  border-radius: 10px;
+}
