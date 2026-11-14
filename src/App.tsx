@@ -1499,8 +1499,20 @@ function App() {
                     strokeWidth="1.5"
                     pointerEvents="none"
                   />
+                  <text
+                    x={p.x + 10}
+                    y={p.y - 10}
+                    fontSize="11"
+                    fontFamily="Georgia, 'Times New Roman', serif"
+                    fontStyle="italic"
+                    fill="#222222"
+                    pointerEvents="none"
+                  >
+                    {labels[i]}
+                  </text>
 
                 </g>
+
 
               ))}
 
