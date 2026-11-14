@@ -742,9 +742,6 @@ function App() {
     }
 
     try {
-      const roadNames = Object.entries(roadSides)
-        .filter(([, selected]) => selected)
-        .map(([side]) => side);
 
       const reportLines = [
         "PLOT INFORMATION",
@@ -756,7 +753,7 @@ function App() {
         "SIDE MEASUREMENTS",
 
         ...(["AB", "BC", "CD", "DA"] as const).map(
-          (side, index) =>
+          (side) =>
             `${side}: ${fromMetres(sides[side], unit).toFixed(2)} ${unit} | Bearing: ${surveyInfo.bearings[side]}`
         ),
 
