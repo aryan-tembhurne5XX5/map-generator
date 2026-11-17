@@ -1249,7 +1249,7 @@ function App() {
                   x={SVG_WIDTH - 35}
                   y="35"
                   textAnchor="end"
-                  fontFamily="Georgia, 'Times New Roman', serif"
+                  fontFamily="Ranade, sans-serif"
                   fontSize="13"
                   fontStyle="italic"
                   fill="#222222"
@@ -1385,7 +1385,7 @@ function App() {
                       x={labelX}
                       y={labelY - 9}
                       textAnchor="middle"
-                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontFamily="Ranade, sans-serif"
                       fontSize="14"
                       fontStyle="italic"
                       fill="#222222"
@@ -1400,7 +1400,7 @@ function App() {
                       x={labelX}
                       y={labelY + 12}
                       textAnchor="middle"
-                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontFamily="Ranade, sans-serif"
                       fontSize="13"
                       fill="#222222"
                       transform={textTransform}
@@ -1425,7 +1425,7 @@ function App() {
                           y={neighbourY}
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          fontFamily="Georgia, 'Times New Roman', serif"
+                          fontFamily="Ranade, sans-serif"
                           fontSize="17"
                           fontStyle="italic"
                           fill="#252525"
@@ -1452,7 +1452,7 @@ function App() {
                           y={roadLabelY}
                           textAnchor="middle"
                           dominantBaseline="middle"
-                          fontFamily="Georgia, 'Times New Roman', serif"
+                          fontFamily="Ranade, sans-serif"
                           fontSize="14"
                           fontStyle="italic"
                           fill="#222222"
@@ -1503,7 +1503,7 @@ function App() {
                     x={p.x + 10}
                     y={p.y - 10}
                     fontSize="11"
-                    fontFamily="Georgia, 'Times New Roman', serif"
+                    fontFamily="Ranade, sans-serif"
                     fontStyle="italic"
                     fill="#222222"
                     pointerEvents="none"
@@ -1534,7 +1534,7 @@ function App() {
                       x={centerX}
                       y={centerY - 8}
                       textAnchor="middle"
-                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontFamily="Ranade, sans-serif"
                       fontSize="34"
                       fontStyle="italic"
                       fill="#222222"
@@ -1546,7 +1546,7 @@ function App() {
                       x={centerX}
                       y={centerY + 28}
                       textAnchor="middle"
-                      fontFamily="Georgia, 'Times New Roman', serif"
+                      fontFamily="Ranade, sans-serif"
                       fontSize="20"
                       fontStyle="italic"
                       fill="#222222"
