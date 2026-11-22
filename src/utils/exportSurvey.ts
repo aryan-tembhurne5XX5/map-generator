@@ -225,7 +225,9 @@ const escapeHtml = (text: string): string => {
 export const downloadSurveyPDF = async (
     svgElement: SVGSVGElement,
     reportLines: string[] = [],
-    filename: string = "Plotrix-Survey.pdf"
+    filename: string = "Plotrix-Survey.pdf",
+    mapTitle: string = "RE-SURVEY MAP",
+    mapSubtitle: string = "(Updated Survey Boundaries and Measurements)"
 ): Promise<void> => {
 
     try {
@@ -469,11 +471,11 @@ body {
 <div class="page">
 
     <div class="map-title">
-        RE-SURVEY MAP
+        ${escapeHtml(mapTitle)}
     </div>
 
     <div class="map-subtitle">
-        (Updated Survey Boundaries and Measurements)
+        ${escapeHtml(mapSubtitle)}
     </div>
 
     <div class="header-line"></div>

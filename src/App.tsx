@@ -145,6 +145,9 @@ function App() {
   };
   // SURVEY INFORMATION
 
+  const [mapTitle, setMapTitle] = useState("RE-SURVEY MAP");
+  const [mapSubtitle, setMapSubtitle] = useState("(Updated Survey Boundaries and Measurements)");
+
   const [surveyInfo, setSurveyInfo] = useState({
     surveyNumber: "125/1",
     plotNumber: "125/1",
@@ -806,7 +809,9 @@ function App() {
       await downloadSurveyPDF(
         svg as unknown as SVGSVGElement,
         reportLines,
-        "Plotrix-Survey.pdf"
+        "Plotrix-Survey.pdf",
+        mapTitle,
+        mapSubtitle
       );
 
       setError("");
@@ -1042,6 +1047,28 @@ function App() {
             <p className="subtitle">
               Enter property and neighbouring survey details.
             </p>
+
+            <div className="input-group">
+              <label>Map title</label>
+
+              <input
+                type="text"
+                value={mapTitle}
+                onChange={e => setMapTitle(e.target.value)}
+                placeholder="e.g. RE-SURVEY MAP"
+              />
+            </div>
+
+            <div className="input-group">
+              <label>Map subtitle</label>
+
+              <input
+                type="text"
+                value={mapSubtitle}
+                onChange={e => setMapSubtitle(e.target.value)}
+                placeholder="e.g. (Updated Survey Boundaries and Measurements)"
+              />
+            </div>
 
             <div className="input-group">
               <label>Survey number</label>
