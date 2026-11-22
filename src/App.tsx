@@ -1632,25 +1632,28 @@ function App() {
                 // Start with a normal readable font.
                 const baseFontSize = 28;
 
-                // Wrap FIRST.
                 const maxChars = Math.max(
-                  8,
+                  1,
                   Math.floor(usableWidth / (baseFontSize * 0.60))
                 );
 
-                const lines = wrapText(
-                  surveyInfo.plotNumber,
-                  maxChars
+                // Break even long strings without spaces.
+                const text = surveyInfo.plotNumber || "";
+                const lines: string[] = [];
+
+                for (let i = 0; i < text.length; i += maxChars) {
+                  lines.push(text.slice(i, i + maxChars));
+                }
+
+                const maxLines = 4;
+
+                const fittedFontSize = Math.max(
+                  12,
+                  Math.min(
+                    baseFontSize,
+                    baseFontSize * (maxLines / Math.max(lines.length, 1))
+                  )
                 );
-
-                // Don't shrink just because the text is long.
-                // Reduce only when the text becomes too many lines.
-                const maxLines = 5;
-
-                const fittedFontSize =
-                  lines.length > maxLines
-                    ? Math.max(18, baseFontSize * (maxLines / lines.length))
-                    : baseFontSize;
 
                 const lineHeight = fittedFontSize * 1.35;
 
