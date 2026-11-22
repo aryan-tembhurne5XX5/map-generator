@@ -119,7 +119,12 @@ function App() {
     DA: false
   });
 
-  const [roadWidth, setRoadWidth] = useState(6);
+  const [roadWidths, setRoadWidths] = useState({
+    AB: 6,
+    BC: 6,
+    CD: 6,
+    DA: 6
+  });
   const toggleRoad = (side: keyof typeof roadSides) => {
     setRoadSides(prev => ({
       ...prev,
@@ -127,10 +132,16 @@ function App() {
     }));
   };
 
-  const updateRoadWidth = (value: number) => {
+  const updateRoadWidth = (
+    side: keyof typeof roadWidths,
+    value: number
+  ) => {
     if (!Number.isFinite(value) || value <= 0) return;
 
-    setRoadWidth(toMetres(value, unit));
+    setRoadWidths(prev => ({
+      ...prev,
+      [side]: toMetres(value, unit)
+    }));
   };
   // SURVEY INFORMATION
 
@@ -385,13 +396,13 @@ function App() {
   const centerY =
     transformed.reduce((sum, p) => sum + p.y, 0) / 4;
 
-  const roadWidthPx = roadWidth * view.scale;
-
   const roads = transformed.flatMap((p1, i) => {
 
     const side = (["AB", "BC", "CD", "DA"] as const)[i];
 
     if (!roadSides[side]) return [];
+
+    const roadWidthPx = roadWidths[side] * view.scale;
 
     const p2 = transformed[(i + 1) % 4];
 
@@ -728,7 +739,12 @@ function App() {
       DA: false
     });
 
-    setRoadWidth(6);
+    setRoadWidths({
+      AB: 6,
+      BC: 6,
+      CD: 6,
+      DA: 6
+    });
     setError("");
   };
 
@@ -780,7 +796,11 @@ function App() {
           .join(", ") || "None"
         }`,
 
-        `Road width: ${fromMetres(roadWidth, unit).toFixed(2)} ${unit}`
+        ...(["AB", "BC", "CD", "DA"] as const)
+          .filter(side => roadSides[side])
+          .map(side =>
+            `Road ${side} width: ${fromMetres(roadWidths[side], unit).toFixed(2)} ${unit}`
+          )
       ];
 
       await downloadSurveyPDF(
@@ -954,39 +974,50 @@ function App() {
 
               {(Object.keys(roadSides) as (keyof typeof roadSides)[]).map(side => (
 
-                <button
-                  key={side}
-                  className={`road-option ${roadSides[side] ? "active" : ""}`}
-                  onClick={() => toggleRoad(side)}
-                >
-                  <span>{side}</span>
+                <div key={side} className="road-option-wrapper">
 
-                  <span className="road-switch">
-                    {roadSides[side] ? "ON" : "OFF"}
-                  </span>
-                </button>
+                  <button
+                    className={`road-option ${roadSides[side] ? "active" : ""}`}
+                    onClick={() => toggleRoad(side)}
+                  >
+                    <span>{side}</span>
+
+                    <span className="road-switch">
+                      {roadSides[side] ? "ON" : "OFF"}
+                    </span>
+                  </button>
+
+                  {roadSides[side] && (
+
+                    <div className="road-width">
+
+                      <label>Road width · {side}</label>
+
+                      <div className="input-wrapper">
+
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.5"
+                          value={Number(
+                            fromMetres(roadWidths[side], unit).toFixed(2)
+                          )}
+                          onChange={e =>
+                            updateRoadWidth(side, Number(e.target.value))
+                          }
+                        />
+
+                        <span>{unit}</span>
+
+                      </div>
+
+                    </div>
+
+                  )}
+
+                </div>
 
               ))}
-
-            </div>
-
-            <div className="road-width">
-
-              <label>Road width</label>
-
-              <div className="input-wrapper">
-
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.5"
-                  value={Number(fromMetres(roadWidth, unit).toFixed(2))}
-                  onChange={e => updateRoadWidth(Number(e.target.value))}
-                />
-
-                <span>{unit}</span>
-
-              </div>
 
             </div>
 
@@ -1459,8 +1490,12 @@ function App() {
                 }
 
                 // Neighbour text is placed in a completely separate lane.
+                const sideRoadWidthPx = roadAttached
+                  ? roadWidths[side] * view.scale
+                  : 0;
+
                 const neighbourOffset = roadAttached
-                  ? roadWidthPx + 80
+                  ? sideRoadWidthPx + 80
                   : 80;
 
                 const neighbourX = midX + nx * neighbourOffset;
@@ -1475,7 +1510,9 @@ function App() {
                 );
 
                 // Road label.
-                const roadNameOffset = roadWidthPx * 0.75;
+                const roadNameOffset = roadAttached
+                  ? roadWidths[side] * view.scale * 0.75
+                  : 0;
 
                 const roadLabelX = midX + nx * roadNameOffset;
                 const roadLabelY = midY + ny * roadNameOffset;
@@ -1629,7 +1666,7 @@ function App() {
                   Math.min(horizontalWidth, verticalWidth) * 0.88;
 
                 const maxFontSize = 32;
-                const minFontSize = 18;
+                const minFontSize = 12;
 
                 const words = surveyInfo.plotNumber
                   .trim()
