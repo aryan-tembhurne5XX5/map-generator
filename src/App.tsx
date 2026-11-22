@@ -1695,10 +1695,6 @@ function App() {
                 const maxFontSize = 32;
                 const minFontSize = 12;
 
-                const words = surveyInfo.plotNumber
-                  .trim()
-                  .split(/\s+/);
-
                 // Word-based wrapping instead of splitting words by characters.
                 const wrapWords = (
                   text: string,

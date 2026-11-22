@@ -236,8 +236,7 @@ export const downloadSurveyPDF = async (
 
         const fontBase64 = await loadFontBase64();
 
-        const pageWidth = 297;
-        const pageHeight = 210;
+
 
         const half = Math.ceil(reportLines.length / 2);
 
