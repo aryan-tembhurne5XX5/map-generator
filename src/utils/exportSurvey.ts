@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { loadHindiFont } from "./pdfFont";
 
 /**
  * Converts an SVG element into a high-resolution PNG data URL.
@@ -173,6 +174,8 @@ export const downloadSurveyPDF = async (
             format: "a4",
         });
 
+        await loadHindiFont(pdf);
+
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
 
@@ -306,10 +309,18 @@ export const downloadSurveyPDF = async (
                     line === line.toUpperCase() &&
                     line.length < 35;
 
-                pdf.setFont(
-                    "times",
-                    isHeading ? "bold" : "normal"
-                );
+                const containsHindi =
+                    /[\u0900-\u097F]/.test(line);
+
+                // Select appropriate font
+                if (containsHindi) {
+                    pdf.setFont("NotoSansDevanagari", "normal");
+                } else {
+                    pdf.setFont(
+                        "times",
+                        isHeading ? "bold" : "normal"
+                    );
+                }
 
                 pdf.setFontSize(isHeading ? 12 : 10);
 

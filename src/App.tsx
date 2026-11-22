@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import type { PointerEvent } from "react";
 import { downloadSurveyPDF } from "./utils/exportSurvey";
+import { wrapText, fitFontSize } from "./utils/svgText";
 
 import {
   RotateCcw,
@@ -108,6 +109,8 @@ function App() {
   const [locked, setLocked] = useState(true);
 
   const [showGrid, setShowGrid] = useState(false);
+
+  const [plotColor, setPlotColor] = useState("#999f59");
 
   const [roadSides, setRoadSides] = useState({
     AB: false,
@@ -847,6 +850,30 @@ function App() {
 
         <aside className="panel">
 
+          <div className="divider" />
+
+          <div className="color-section">
+            <h3>Plot appearance</h3>
+            <p className="subtitle">Customize the land colour.</p>
+
+            <div className="color-picker-row">
+              <label htmlFor="plot-color">Plot colour</label>
+
+              <div className="color-picker-control">
+                <input
+                  id="plot-color"
+                  type="color"
+                  value={plotColor}
+                  onChange={e => setPlotColor(e.target.value)}
+                />
+
+                <span>{plotColor.toUpperCase()}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="divider" />
+
           <h3>Land dimensions</h3>
 
           <p className="subtitle">
@@ -1241,23 +1268,43 @@ function App() {
               )}
               {/* SURVEY MAP HEADING */}
 
-              <g pointerEvents="none">
+              {(() => {
+                const heading = `SURVEY No. ${surveyInfo.surveyNumber}`;
 
+                const maxWidth = SVG_WIDTH - 150;
+                const fontSize = fitFontSize(
+                  heading,
+                  maxWidth,
+                  13,
+                  8
+                );
 
+                const lines = wrapText(
+                  heading,
+                  Math.max(15, Math.floor(maxWidth / (fontSize * 0.65)))
+                );
 
-                <text
-                  x={SVG_WIDTH - 35}
-                  y="35"
-                  textAnchor="end"
-                  fontFamily="Ranade, sans-serif"
-                  fontSize="13"
-                  fontStyle="italic"
-                  fill="#222222"
-                >
-                  SURVEY No. {surveyInfo.surveyNumber}
-                </text>
+                return (
+                  <g pointerEvents="none">
 
-              </g>
+                    {lines.map((line, i) => (
+                      <text
+                        key={i}
+                        x={SVG_WIDTH - 35}
+                        y={35 + i * (fontSize * 1.4)}
+                        textAnchor="end"
+                        fontFamily="Ranade, sans-serif"
+                        fontSize={fontSize}
+                        fontStyle="italic"
+                        fill="#222222"
+                      >
+                        {line}
+                      </text>
+                    ))}
+
+                  </g>
+                );
+              })()}
               {/* ROADS */}
 
               {roads.map(road => (
@@ -1291,15 +1338,52 @@ function App() {
 
               ))}
 
+              {/* CLIP GRID TO PLOT */}
+              <defs>
+                <clipPath id="plotClip">
+                  <polygon points={polygonPoints} />
+                </clipPath>
+              </defs>
+
               {/* LAND POLYGON */}
 
               <polygon
                 points={polygonPoints}
-                fill="#999f59"
+                fill={plotColor}
                 stroke="#252525"
                 strokeWidth="1.4"
                 strokeLinejoin="round"
               />
+
+              {/* GRID INSIDE PLOT */}
+              <g clipPath="url(#plotClip)" pointerEvents="none">
+
+                <defs>
+                  <pattern
+                    id="plotGrid"
+                    width="25"
+                    height="25"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <path
+                      d="M 25 0 L 0 0 0 25"
+                      fill="none"
+                      stroke="#333333"
+                      strokeWidth="0.6"
+                      opacity="0.5"
+                    />
+                  </pattern>
+                </defs>
+
+                <rect
+                  x="0"
+                  y="0"
+                  width={SVG_WIDTH}
+                  height={SVG_HEIGHT}
+                  fill="url(#plotGrid)"
+                />
+
+              </g>
 
               {/* SURVEY BOUNDARY ANNOTATIONS */}
 
@@ -1329,15 +1413,15 @@ function App() {
                 const midX = (p1.x + p2.x) / 2;
                 const midY = (p1.y + p2.y) / 2;
 
-                const centerX =
+                const polygonCenterX =
                   transformed.reduce((sum, p) => sum + p.x, 0) / 4;
 
-                const centerY =
+                const polygonCenterY =
                   transformed.reduce((sum, p) => sum + p.y, 0) / 4;
 
                 if (
-                  nx * (midX - centerX) +
-                  ny * (midY - centerY) < 0
+                  nx * (midX - polygonCenterX) +
+                  ny * (midY - polygonCenterY) < 0
                 ) {
                   nx *= -1;
                   ny *= -1;
@@ -1345,26 +1429,8 @@ function App() {
 
                 const roadAttached = roadSides[side];
 
-                // Keep annotations inside the plot if road occupies the outside.
-                const direction = roadAttached ? -1 : 1;
-
-                const offset = 30 * direction;
-
-                const labelX = midX + nx * offset;
-                const labelY = midY + ny * offset;
-
-                // Keep text readable regardless of side direction.
-                let rotation =
-                  Math.atan2(dy, dx) * 180 / Math.PI;
-
-                if (rotation > 90 || rotation < -90) {
-                  rotation += rotation > 90 ? -180 : 180;
-                }
-
                 const bearing = surveyInfo.bearings[side];
-
                 const adjacentPlot = surveyInfo.adjacentPlots[side];
-
                 const roadName = surveyInfo.roadNames[side];
 
                 const displayLength = fromMetres(
@@ -1372,8 +1438,47 @@ function App() {
                   unit
                 );
 
-                const textTransform =
-                  `rotate(${rotation}, ${labelX}, ${labelY})`;
+                // Separate annotation lanes using the perpendicular normal.
+                const dimensionOffset = roadAttached ? -28 : 28;
+
+                const bearingOffset = dimensionOffset;
+                const lengthOffset = dimensionOffset + (roadAttached ? -17 : 17);
+
+                const bearingX = midX + nx * bearingOffset;
+                const bearingY = midY + ny * bearingOffset;
+
+                const lengthX = midX + nx * lengthOffset;
+                const lengthY = midY + ny * lengthOffset;
+
+                // Normalize rotation.
+                let rotation =
+                  Math.atan2(dy, dx) * 180 / Math.PI;
+
+                if (rotation > 90 || rotation < -90) {
+                  rotation += rotation > 90 ? -180 : 180;
+                }
+
+                // Neighbour text is placed in a completely separate lane.
+                const neighbourOffset = roadAttached
+                  ? roadWidthPx + 80
+                  : 80;
+
+                const neighbourX = midX + nx * neighbourOffset;
+                const neighbourY = midY + ny * neighbourOffset;
+
+                // Allow long neighbouring names to shrink.
+                const neighbourFontSize = fitFontSize(
+                  adjacentPlot,
+                  length * 0.9,
+                  14,
+                  7
+                );
+
+                // Road label.
+                const roadNameOffset = roadWidthPx * 0.75;
+
+                const roadLabelX = midX + nx * roadNameOffset;
+                const roadLabelY = midY + ny * roadNameOffset;
 
                 return (
 
@@ -1382,14 +1487,14 @@ function App() {
                     {/* BEARING */}
 
                     <text
-                      x={labelX}
-                      y={labelY - 9}
+                      x={bearingX}
+                      y={bearingY}
                       textAnchor="middle"
                       fontFamily="Ranade, sans-serif"
-                      fontSize="14"
+                      fontSize="13"
                       fontStyle="italic"
                       fill="#222222"
-                      transform={textTransform}
+                      transform={`rotate(${rotation}, ${bearingX}, ${bearingY})`}
                     >
                       {bearing}
                     </text>
@@ -1397,72 +1502,56 @@ function App() {
                     {/* SIDE LENGTH */}
 
                     <text
-                      x={labelX}
-                      y={labelY + 12}
+                      x={lengthX}
+                      y={lengthY}
                       textAnchor="middle"
                       fontFamily="Ranade, sans-serif"
                       fontSize="13"
                       fill="#222222"
-                      transform={textTransform}
+                      transform={`rotate(${rotation}, ${lengthX}, ${lengthY})`}
                     >
                       {displayLength.toFixed(2)}
                     </text>
 
-                    {/* NEIGHBOURING SURVEY NUMBER */}
+                    {/* NEIGHBOURING PROPERTY */}
 
-                    {adjacentPlot && (() => {
+                    {adjacentPlot && (
 
-                      const neighbourOffset = roadAttached
-                        ? roadWidthPx + 38
-                        : 78;
+                      <text
+                        x={neighbourX}
+                        y={neighbourY}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontFamily="Ranade, sans-serif"
+                        fontSize={neighbourFontSize}
+                        fontStyle="italic"
+                        fill="#252525"
+                        transform={`rotate(${rotation}, ${neighbourX}, ${neighbourY})`}
+                      >
+                        {adjacentPlot}
+                      </text>
 
-                      const neighbourX = midX + nx * neighbourOffset;
-                      const neighbourY = midY + ny * neighbourOffset;
-
-                      return (
-                        <text
-                          x={neighbourX}
-                          y={neighbourY}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          fontFamily="Ranade, sans-serif"
-                          fontSize="17"
-                          fontStyle="italic"
-                          fill="#252525"
-                        >
-                          {adjacentPlot}
-                        </text>
-                      );
-
-                    })()}
+                    )}
 
                     {/* ROAD NAME */}
 
-                    {roadAttached && roadName && (() => {
+                    {roadAttached && roadName && (
 
-                      // Position the name inside the road surface.
-                      const roadNameOffset = roadWidthPx * 0.78;
+                      <text
+                        x={roadLabelX}
+                        y={roadLabelY}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontFamily="Ranade, sans-serif"
+                        fontSize="12"
+                        fontStyle="italic"
+                        fill="#222222"
+                        transform={`rotate(${rotation}, ${roadLabelX}, ${roadLabelY})`}
+                      >
+                        {roadName.toUpperCase()}
+                      </text>
 
-                      const roadLabelX = midX + nx * roadNameOffset;
-                      const roadLabelY = midY + ny * roadNameOffset;
-
-                      return (
-                        <text
-                          x={roadLabelX}
-                          y={roadLabelY}
-                          textAnchor="middle"
-                          dominantBaseline="middle"
-                          fontFamily="Ranade, sans-serif"
-                          fontSize="14"
-                          fontStyle="italic"
-                          fill="#222222"
-                          transform={`rotate(${rotation}, ${roadLabelX}, ${roadLabelY})`}
-                        >
-                          {roadName.toUpperCase()}
-                        </text>
-                      );
-
-                    })()}
+                    )}
 
                   </g>
 
@@ -1526,28 +1615,93 @@ function App() {
                 const centerY =
                   transformed.reduce((sum, p) => sum + p.y, 0) / 4;
 
+                // Available width inside the plot.
+                const horizontalWidth = Math.min(
+                  distance(points[0], points[1]),
+                  distance(points[2], points[3])
+                ) * view.scale;
+
+                const verticalWidth = Math.min(
+                  distance(points[1], points[2]),
+                  distance(points[3], points[0])
+                ) * view.scale;
+
+                const usableWidth =
+                  Math.min(horizontalWidth, verticalWidth) * 0.80;
+
+                // Start with a normal readable font.
+                const baseFontSize = 28;
+
+                // Wrap FIRST.
+                const maxChars = Math.max(
+                  8,
+                  Math.floor(usableWidth / (baseFontSize * 0.60))
+                );
+
+                const lines = wrapText(
+                  surveyInfo.plotNumber,
+                  maxChars
+                );
+
+                // Don't shrink just because the text is long.
+                // Reduce only when the text becomes too many lines.
+                const maxLines = 5;
+
+                const fittedFontSize =
+                  lines.length > maxLines
+                    ? Math.max(18, baseFontSize * (maxLines / lines.length))
+                    : baseFontSize;
+
+                const lineHeight = fittedFontSize * 1.35;
+
+                const totalTextHeight =
+                  lines.length * lineHeight;
+
+                const areaFontSize = 17;
+
+                const totalBlockHeight =
+                  totalTextHeight + areaFontSize + 16;
+
+                const startY =
+                  centerY - totalBlockHeight / 2;
+
                 return (
 
                   <g pointerEvents="none">
 
-                    <text
-                      x={centerX}
-                      y={centerY - 8}
-                      textAnchor="middle"
-                      fontFamily="Ranade, sans-serif"
-                      fontSize="34"
-                      fontStyle="italic"
-                      fill="#222222"
-                    >
-                      {surveyInfo.plotNumber}
-                    </text>
+                    {/* Plot description */}
 
                     <text
                       x={centerX}
-                      y={centerY + 28}
                       textAnchor="middle"
                       fontFamily="Ranade, sans-serif"
-                      fontSize="20"
+                      fontSize={fittedFontSize}
+                      fontStyle="italic"
+                      fill="#222222"
+                    >
+
+                      {lines.map((line, i) => (
+
+                        <tspan
+                          key={i}
+                          x={centerX}
+                          y={startY + fittedFontSize + i * lineHeight}
+                        >
+                          {line}
+                        </tspan>
+
+                      ))}
+
+                    </text>
+
+                    {/* Area */}
+
+                    <text
+                      x={centerX}
+                      y={startY + totalTextHeight + areaFontSize + 8}
+                      textAnchor="middle"
+                      fontFamily="Ranade, sans-serif"
+                      fontSize={areaFontSize}
                       fontStyle="italic"
                       fill="#222222"
                     >
