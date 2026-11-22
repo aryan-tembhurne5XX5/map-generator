@@ -1,16 +1,21 @@
-import { jsPDF } from "jspdf";
-import { loadHindiFont } from "./pdfFont";
-
 /**
- * Converts an SVG element into a high-resolution PNG data URL.
+ * Plotrix PDF Export
+ *
+ * Page 1: Survey map
+ * Page 2: Survey measurements
+ *
+ * Hindi report text is rendered as HTML text and printed by Chromium.
+ * This allows the browser's Indic shaping engine to correctly render
+ * Devanagari matras, conjuncts and glyph positioning.
  */
+
 const svgToPng = async (
     svgElement: SVGSVGElement,
     scale: number = 3
 ): Promise<string> => {
+
     const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
 
-    // Find the visible drawing bounds, excluding the grid background.
     const elements = Array.from(
         svgElement.querySelectorAll(
             "polygon, line, circle, text, path, rect"
@@ -23,10 +28,11 @@ const svgToPng = async (
     let maxY = -Infinity;
 
     elements.forEach((element) => {
+
         const tag = element.tagName.toLowerCase();
 
-        // Ignore the full-canvas background and grid.
         if (tag === "rect") {
+
             const fill = element.getAttribute("fill") || "";
 
             if (
@@ -38,10 +44,10 @@ const svgToPng = async (
             }
         }
 
-        // Ignore pattern definitions.
         if (element.closest("defs")) return;
 
         try {
+
             const box = (element as SVGGraphicsElement).getBBox();
 
             if (!box.width && !box.height) return;
@@ -51,16 +57,17 @@ const svgToPng = async (
 
             maxX = Math.max(maxX, box.x + box.width);
             maxY = Math.max(maxY, box.y + box.height);
+
         } catch {
-            // Ignore elements without measurable bounds.
+            // Ignore elements that cannot be measured.
         }
+
     });
 
     if (!Number.isFinite(minX)) {
         throw new Error("Could not determine drawing bounds.");
     }
 
-    // Add breathing room around all annotations.
     const padding = 35;
 
     minX -= padding;
@@ -71,7 +78,10 @@ const svgToPng = async (
     const width = maxX - minX;
     const height = maxY - minY;
 
-    clonedSvg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clonedSvg.setAttribute(
+        "xmlns",
+        "http://www.w3.org/2000/svg"
+    );
 
     clonedSvg.setAttribute(
         "viewBox",
@@ -83,22 +93,26 @@ const svgToPng = async (
 
     const svgString = new XMLSerializer().serializeToString(clonedSvg);
 
-    const blob = new Blob([svgString], {
-        type: "image/svg+xml;charset=utf-8",
-    });
+    const blob = new Blob(
+        [svgString],
+        { type: "image/svg+xml;charset=utf-8" }
+    );
 
     const url = URL.createObjectURL(blob);
 
     try {
+
         const image = new Image();
 
         await new Promise<void>((resolve, reject) => {
+
             image.onload = () => resolve();
-            image.onerror = () => reject(
-                new Error("Could not render SVG.")
-            );
+
+            image.onerror = () =>
+                reject(new Error("Could not render SVG."));
 
             image.src = url;
+
         });
 
         const canvas = document.createElement("canvas");
@@ -132,230 +146,435 @@ const svgToPng = async (
         return canvas.toDataURL("image/png");
 
     } finally {
+
         URL.revokeObjectURL(url);
+
     }
+
 };
 
+
 /**
- * Downloads the plot drawing as a high-resolution PNG.
+ * Downloads the plot drawing as PNG.
  */
 export const downloadSurveyPNG = async (
     svgElement: SVGSVGElement,
     filename: string = "plotrix-survey.png"
 ): Promise<void> => {
-    try {
-        const pngData = await svgToPng(svgElement);
 
-        const link = document.createElement("a");
-        link.href = pngData;
-        link.download = filename;
-        link.click();
-    } catch (error) {
-        console.error("PNG export failed:", error);
-        throw error;
-    }
+    const pngData = await svgToPng(svgElement);
+
+    const link = document.createElement("a");
+
+    link.href = pngData;
+    link.download = filename;
+
+    link.click();
+
 };
 
+
 /**
- * Creates an A4 landscape survey PDF.
- * Drawing appears on the left and survey information on the right.
+ * Converts a TTF file to Base64.
+ */
+const loadFontBase64 = async (): Promise<string> => {
+
+    const response = await fetch(
+        "/fonts/NotoSansDevanagari-Regular.ttf"
+    );
+
+    if (!response.ok) {
+        throw new Error("Could not load Hindi font.");
+    }
+
+    const buffer = await response.arrayBuffer();
+
+    const bytes = new Uint8Array(buffer);
+
+    let binary = "";
+
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+
+    return btoa(binary);
+
+};
+
+
+/**
+ * Escape HTML text.
+ */
+const escapeHtml = (text: string): string => {
+
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+
+};
+
+
+/**
+ * Creates the PDF through Chromium's native print renderer.
+ *
+ * Hindi text is kept as actual HTML text and is NOT rasterized.
  */
 export const downloadSurveyPDF = async (
     svgElement: SVGSVGElement,
     reportLines: string[] = [],
     filename: string = "Plotrix-Survey.pdf"
 ): Promise<void> => {
+
     try {
-        const image = await svgToPng(svgElement, 4);
 
-        const pdf = new jsPDF({
-            orientation: "landscape",
-            unit: "mm",
-            format: "a4",
-        });
+        const mapImage = await svgToPng(svgElement, 4);
 
-        await loadHindiFont(pdf);
+        const fontBase64 = await loadFontBase64();
 
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
+        const pageWidth = 297;
+        const pageHeight = 210;
 
-        const margin = 10;
-
-        // =====================================
-        // PAGE 1: SURVEY MAP
-        // =====================================
-
-        pdf.setFont("times", "bold");
-        pdf.setFontSize(24);
-
-        pdf.text(
-            "RE-SURVEY MAP",
-            pageWidth / 2,
-            15,
-            { align: "center" }
-        );
-
-        pdf.setFont("times", "italic");
-        pdf.setFontSize(11);
-
-        pdf.text(
-            "(Updated Survey Boundaries and Measurements)",
-            pageWidth / 2,
-            22,
-            { align: "center" }
-        );
-
-        pdf.setDrawColor(70, 70, 70);
-
-        pdf.line(
-            margin,
-            27,
-            pageWidth - margin,
-            27
-        );
-
-        const properties = pdf.getImageProperties(image);
-
-        const aspectRatio =
-            properties.width / properties.height;
-
-        const availableWidth = pageWidth - margin * 2;
-        const availableHeight = 165;
-
-        let drawingWidth = availableWidth;
-        let drawingHeight = drawingWidth / aspectRatio;
-
-        if (drawingHeight > availableHeight) {
-            drawingHeight = availableHeight;
-            drawingWidth = drawingHeight * aspectRatio;
-        }
-
-        const drawingX = (pageWidth - drawingWidth) / 2;
-        const drawingY = 30 + (availableHeight - drawingHeight) / 2;
-
-        pdf.addImage(
-            image,
-            "PNG",
-            drawingX,
-            drawingY,
-            drawingWidth,
-            drawingHeight
-        );
-
-        pdf.setFont("times", "italic");
-        pdf.setFontSize(8);
-
-        pdf.text(
-            "Mathematical plot plan only. Not a certified cadastral or legal survey.",
-            margin,
-            pageHeight - 6
-        );
-
-        pdf.text(
-            "Generated using Plotrix",
-            pageWidth - margin,
-            pageHeight - 6,
-            { align: "right" }
-        );
-
-        // =====================================
-        // PAGE 2: COMPLETE SURVEY REPORT
-        // =====================================
-
-        pdf.addPage("a4", "landscape");
-
-        pdf.setFont("times", "bold");
-        pdf.setFontSize(22);
-
-        pdf.text(
-            "SURVEY MEASUREMENTS",
-            pageWidth / 2,
-            18,
-            { align: "center" }
-        );
-
-        pdf.setDrawColor(70, 70, 70);
-
-        pdf.line(
-            margin,
-            25,
-            pageWidth - margin,
-            25
-        );
-
-        const columnWidth = 125;
+        const half = Math.ceil(reportLines.length / 2);
 
         const columns = [
-            reportLines.slice(0, Math.ceil(reportLines.length / 2)),
-            reportLines.slice(Math.ceil(reportLines.length / 2))
+            reportLines.slice(0, half),
+            reportLines.slice(half)
         ];
 
-        columns.forEach((lines, columnIndex) => {
+        const renderColumn = (lines: string[]) => {
 
-            const x = columnIndex === 0
-                ? margin
-                : pageWidth / 2 + 5;
-
-            let y = 38;
-
-            lines.forEach(line => {
+            return lines.map(line => {
 
                 if (!line.trim()) {
-                    y += 4;
-                    return;
+                    return `<div class="spacer"></div>`;
                 }
 
                 const isHeading =
                     line === line.toUpperCase() &&
                     line.length < 35;
 
-                const containsHindi =
-                    /[\u0900-\u097F]/.test(line);
+                return `
+                    <div class="${isHeading ? "section-heading" : "report-line"}">
+                        ${escapeHtml(line)}
+                    </div>
+                `;
 
-                // Select appropriate font
-                if (containsHindi) {
-                    pdf.setFont("NotoSansDevanagari", "normal");
-                } else {
-                    pdf.setFont(
-                        "times",
-                        isHeading ? "bold" : "normal"
-                    );
-                }
+            }).join("");
 
-                pdf.setFontSize(isHeading ? 12 : 10);
+        };
 
-                const wrapped = pdf.splitTextToSize(
-                    line,
-                    columnWidth
-                );
 
-                wrapped.forEach((text: string) => {
-
-                    if (y > pageHeight - 20) return;
-
-                    pdf.text(text, x, y);
-
-                    y += isHeading ? 7 : 5;
-
-                });
-
-            });
-
-        });
-
-        pdf.setFont("times", "italic");
-        pdf.setFontSize(8);
-
-        pdf.text(
-            "Mathematical plot plan only. Not a certified cadastral or legal survey.",
-            margin,
-            pageHeight - 6
+        const printWindow = window.open(
+            "",
+            "_blank"
         );
 
-        pdf.save(filename);
+        if (!printWindow) {
+
+            throw new Error(
+                "Popup blocked. Please allow popups for Plotrix."
+            );
+
+        }
+
+
+        printWindow.document.open();
+
+        printWindow.document.write(`
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+
+<title>${escapeHtml(filename)}</title>
+
+<style>
+
+@font-face {
+    font-family: "NotoDevanagari";
+    src: url(data:font/ttf;base64,${fontBase64}) format("truetype");
+    font-weight: normal;
+    font-style: normal;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    color: #111;
+    font-family: "Times New Roman", serif;
+}
+
+@page {
+    size: A4 landscape;
+    margin: 0;
+}
+
+.page {
+    width: 297mm;
+    height: 210mm;
+    padding: 10mm;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+}
+
+.page:last-child {
+    page-break-after: auto;
+}
+
+/* =====================================
+   PAGE 1
+===================================== */
+
+.map-title {
+    text-align: center;
+    font-size: 24pt;
+    font-weight: bold;
+    margin-top: 1mm;
+}
+
+.map-subtitle {
+    text-align: center;
+    font-size: 11pt;
+    font-style: italic;
+    margin-top: 2mm;
+}
+
+.header-line {
+    border-top: 1px solid #555;
+    margin-top: 4mm;
+}
+
+.map-container {
+    width: 100%;
+    height: 165mm;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.map-container img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.footer {
+    position: absolute;
+    bottom: 4mm;
+    left: 10mm;
+    right: 10mm;
+    font-size: 8pt;
+    font-style: italic;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* =====================================
+   PAGE 2
+===================================== */
+
+.report-title {
+    text-align: center;
+    font-size: 22pt;
+    font-weight: bold;
+    margin-top: 2mm;
+}
+
+.report-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12mm;
+    margin-top: 10mm;
+}
+
+.report-column {
+    font-size: 10pt;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+}
+
+.section-heading {
+    font-weight: bold;
+    font-size: 12pt;
+    margin-top: 3mm;
+    margin-bottom: 1.5mm;
+}
+
+.report-line {
+    margin-bottom: 1mm;
+}
+
+.spacer {
+    height: 3mm;
+}
+
+/*
+ * Crucial: Hindi is rendered as text by Chromium.
+ * The font supports glyphs, while Chromium performs
+ * the actual Devanagari shaping.
+ */
+
+.report-column,
+.report-line,
+.section-heading {
+    font-family:
+        "NotoDevanagari",
+        "Noto Sans Devanagari",
+        "Mangal",
+        sans-serif;
+}
+
+.report-title {
+    font-family: "Times New Roman", serif;
+}
+
+@media screen {
+
+    body {
+        background: #ddd;
+    }
+
+    .page {
+        background: white;
+        margin: 10px auto;
+        box-shadow: 0 0 8px #999;
+    }
+
+}
+
+@media print {
+
+    body {
+        background: white;
+    }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<!-- PAGE 1 -->
+
+<div class="page">
+
+    <div class="map-title">
+        RE-SURVEY MAP
+    </div>
+
+    <div class="map-subtitle">
+        (Updated Survey Boundaries and Measurements)
+    </div>
+
+    <div class="header-line"></div>
+
+    <div class="map-container">
+        <img src="${mapImage}" />
+    </div>
+
+    <div class="footer">
+
+        <span>
+            Mathematical plot plan only.
+            Not a certified cadastral or legal survey.
+        </span>
+
+        <span>
+            Generated using Plotrix
+        </span>
+
+    </div>
+
+</div>
+
+
+<!-- PAGE 2 -->
+
+<div class="page">
+
+    <div class="report-title">
+        SURVEY MEASUREMENTS
+    </div>
+
+    <div class="header-line"></div>
+
+    <div class="report-columns">
+
+        <div class="report-column">
+            ${renderColumn(columns[0])}
+        </div>
+
+        <div class="report-column">
+            ${renderColumn(columns[1])}
+        </div>
+
+    </div>
+
+    <div class="footer">
+
+        <span>
+            Mathematical plot plan only.
+            Not a certified cadastral or legal survey.
+        </span>
+
+        <span>
+            Generated using Plotrix
+        </span>
+
+    </div>
+
+</div>
+
+<script>
+
+window.onload = async function() {
+
+    /*
+     * Wait until the font is fully loaded before printing.
+     */
+
+    try {
+
+        await document.fonts.ready;
+
+    } catch (e) {
+
+        console.error("Font loading error", e);
+
+    }
+
+    setTimeout(() => {
+
+        window.print();
+
+    }, 500);
+
+};
+
+</script>
+
+</body>
+</html>
+        `);
+
+        printWindow.document.close();
 
     } catch (error) {
+
         console.error("PDF export failed:", error);
+
         throw error;
+
     }
+
 };

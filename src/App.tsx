@@ -1271,12 +1271,12 @@ function App() {
               {(() => {
                 const heading = `SURVEY No. ${surveyInfo.surveyNumber}`;
 
-                const maxWidth = SVG_WIDTH - 150;
+                const maxWidth = SVG_WIDTH - 200;
                 const fontSize = fitFontSize(
                   heading,
                   maxWidth,
-                  13,
-                  8
+                  20,
+                  17
                 );
 
                 const lines = wrapText(
@@ -1615,7 +1615,6 @@ function App() {
                 const centerY =
                   transformed.reduce((sum, p) => sum + p.y, 0) / 4;
 
-                // Available width inside the plot.
                 const horizontalWidth = Math.min(
                   distance(points[0], points[1]),
                   distance(points[2], points[3])
@@ -1627,43 +1626,113 @@ function App() {
                 ) * view.scale;
 
                 const usableWidth =
-                  Math.min(horizontalWidth, verticalWidth) * 0.80;
+                  Math.min(horizontalWidth, verticalWidth) * 0.88;
 
-                // Start with a normal readable font.
-                const baseFontSize = 28;
+                const maxFontSize = 32;
+                const minFontSize = 18;
 
-                const maxChars = Math.max(
-                  1,
-                  Math.floor(usableWidth / (baseFontSize * 0.60))
-                );
+                const words = surveyInfo.plotNumber
+                  .trim()
+                  .split(/\s+/);
 
-                // Break even long strings without spaces.
-                const text = surveyInfo.plotNumber || "";
-                const lines: string[] = [];
+                // Word-based wrapping instead of splitting words by characters.
+                const wrapWords = (
+                  text: string,
+                  maxWidth: number,
+                  fontSize: number
+                ) => {
 
-                for (let i = 0; i < text.length; i += maxChars) {
-                  lines.push(text.slice(i, i + maxChars));
+                  const approximateCharWidth = fontSize * 0.58;
+
+                  const maxChars = Math.max(
+                    1,
+                    Math.floor(maxWidth / approximateCharWidth)
+                  );
+
+                  const words = text.trim().split(/\s+/);
+
+                  const lines: string[] = [];
+                  let currentLine = "";
+
+                  words.forEach(word => {
+
+                    const testLine = currentLine
+                      ? `${currentLine} ${word}`
+                      : word;
+
+                    if (testLine.length <= maxChars) {
+
+                      currentLine = testLine;
+
+                    } else {
+
+                      if (currentLine) {
+                        lines.push(currentLine);
+                      }
+
+                      currentLine = word;
+
+                    }
+
+                  });
+
+                  if (currentLine) {
+                    lines.push(currentLine);
+                  }
+
+                  return lines;
+
+                };
+
+                let fittedFontSize = maxFontSize;
+                let lines: string[] = [];
+
+                // Try progressively smaller text until the text block fits.
+                for (
+                  let fontSize = maxFontSize;
+                  fontSize >= minFontSize;
+                  fontSize -= 1
+                ) {
+
+                  const candidateLines = wrapWords(
+                    surveyInfo.plotNumber,
+                    usableWidth,
+                    fontSize
+                  );
+
+                  if (candidateLines.length <= 8) {
+
+                    fittedFontSize = fontSize;
+                    lines = candidateLines;
+
+                    break;
+
+                  }
+
                 }
 
-                const maxLines = 4;
+                // Fallback if even the smallest size needs more lines.
+                if (lines.length === 0) {
 
-                const fittedFontSize = Math.max(
-                  12,
-                  Math.min(
-                    baseFontSize,
-                    baseFontSize * (maxLines / Math.max(lines.length, 1))
-                  )
-                );
+                  fittedFontSize = minFontSize;
 
-                const lineHeight = fittedFontSize * 1.35;
+                  lines = wrapWords(
+                    surveyInfo.plotNumber,
+                    usableWidth,
+                    fittedFontSize
+                  );
 
-                const totalTextHeight =
+                }
+
+                const lineHeight = fittedFontSize * 1.25;
+
+                const areaFontSize = 16;
+
+                const textHeight =
                   lines.length * lineHeight;
 
-                const areaFontSize = 17;
-
                 const totalBlockHeight =
-                  totalTextHeight + areaFontSize + 16;
+                  textHeight + areaFontSize + 8;
 
                 const startY =
                   centerY - totalBlockHeight / 2;
@@ -1672,7 +1741,7 @@ function App() {
 
                   <g pointerEvents="none">
 
-                    {/* Plot description */}
+                    {/* Plot number */}
 
                     <text
                       x={centerX}
@@ -1688,7 +1757,11 @@ function App() {
                         <tspan
                           key={i}
                           x={centerX}
-                          y={startY + fittedFontSize + i * lineHeight}
+                          y={
+                            startY +
+                            fittedFontSize +
+                            i * lineHeight
+                          }
                         >
                           {line}
                         </tspan>
@@ -1701,7 +1774,12 @@ function App() {
 
                     <text
                       x={centerX}
-                      y={startY + totalTextHeight + areaFontSize + 8}
+                      y={
+                        startY +
+                        textHeight +
+                        areaFontSize +
+                        8
+                      }
                       textAnchor="middle"
                       fontFamily="Ranade, sans-serif"
                       fontSize={areaFontSize}
@@ -1723,7 +1801,7 @@ function App() {
               {/* COMPASS */}
 
               <g
-                transform={`translate(${SVG_WIDTH - 80}, 100)`}
+                transform={`translate(${SVG_WIDTH - 80}, 145)`}
                 pointerEvents="none"
               >
 
