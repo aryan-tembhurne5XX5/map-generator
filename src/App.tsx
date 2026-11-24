@@ -755,7 +755,15 @@ function App() {
   // EXPORT
   // --------------------------------------
 
-  const handleExport = async () => {
+  const [showOrientationModal, setShowOrientationModal] = useState(false);
+
+  const handleExport = () => {
+    setShowOrientationModal(true);
+  };
+
+  const runExport = async (orientation: "landscape" | "portrait") => {
+    setShowOrientationModal(false);
+
     const svg = document.getElementById("plot-svg");
 
     if (!svg) {
@@ -767,7 +775,7 @@ function App() {
 
       const reportLines = [
         "PLOT INFORMATION",
-        `Survey Number: ${surveyInfo.surveyNumber}`,
+        `Information: ${surveyInfo.surveyNumber}`,
         `Plot Number: ${surveyInfo.plotNumber}`,
         `Area: ${convertArea(area, unit).toFixed(2)} ${unit === "m" ? "m²" : "ft²"}`,
         `Perimeter: ${fromMetres(perimeter, unit).toFixed(2)} ${unit}`,
@@ -811,7 +819,8 @@ function App() {
         reportLines,
         "Plotrix-Survey.pdf",
         mapTitle,
-        mapSubtitle
+        mapSubtitle,
+        orientation
       );
 
       setError("");
@@ -829,6 +838,47 @@ function App() {
   return (
 
     <div className="app">
+
+      {/* ORIENTATION MODAL */}
+
+      {showOrientationModal && (
+        <div className="orientation-overlay" onClick={() => setShowOrientationModal(false)}>
+          <div className="orientation-modal" onClick={e => e.stopPropagation()}>
+
+            <h3>Choose page orientation</h3>
+
+            <p>Select the orientation for your exported PDF.</p>
+
+            <div className="orientation-options">
+
+              <button
+                className="orientation-btn"
+                onClick={() => runExport("landscape")}
+              >
+                <span className="orientation-icon orientation-landscape" />
+                Landscape
+              </button>
+
+              <button
+                className="orientation-btn"
+                onClick={() => runExport("portrait")}
+              >
+                <span className="orientation-icon orientation-portrait" />
+                Portrait
+              </button>
+
+            </div>
+
+            <button
+              className="orientation-cancel"
+              onClick={() => setShowOrientationModal(false)}
+            >
+              Cancel
+            </button>
+
+          </div>
+        </div>
+      )}
 
       {/* HEADER */}
 
@@ -1071,7 +1121,7 @@ function App() {
             </div>
 
             <div className="input-group">
-              <label>Survey number</label>
+              <label>Information</label>
 
               <input
                 type="text"
@@ -1327,7 +1377,7 @@ function App() {
               {/* SURVEY MAP HEADING */}
 
               {(() => {
-                const heading = `SURVEY No. ${surveyInfo.surveyNumber}`;
+                const heading = `${surveyInfo.surveyNumber}`;
 
                 const maxWidth = SVG_WIDTH - 200;
                 const fontSize = fitFontSize(
@@ -1348,9 +1398,9 @@ function App() {
                     {lines.map((line, i) => (
                       <text
                         key={i}
-                        x={SVG_WIDTH - 35}
+                        x={SVG_WIDTH / 2}
                         y={35 + i * (fontSize * 1.4)}
-                        textAnchor="end"
+                        textAnchor="middle"
                         fontFamily="Ranade, sans-serif"
                         fontSize={fontSize}
                         fontStyle="italic"
