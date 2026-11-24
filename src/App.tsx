@@ -72,6 +72,113 @@ function convertArea(value: number, unit: string): number {
 }
 
 // ========================================
+// TEXT LAYOUT & GEOMETRY HELPERS
+// ========================================
+
+function wrapWords(
+  text: string,
+  maxWidth: number,
+  fontSize: number
+): string[] {
+  if (!text.trim()) return [];
+  const approximateCharWidth = fontSize * 0.55;
+  const maxChars = Math.max(
+    1,
+    Math.floor(maxWidth / approximateCharWidth)
+  );
+
+  const words = text.trim().split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const testLine = currentLine
+      ? `${currentLine} ${word}`
+      : word;
+
+    if (testLine.length <= maxChars) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      if (word.length > maxChars) {
+        let remaining = word;
+        while (remaining.length > maxChars) {
+          lines.push(remaining.slice(0, maxChars));
+          remaining = remaining.slice(maxChars);
+        }
+        currentLine = remaining;
+      } else {
+        currentLine = word;
+      }
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+function getQuadCenter(pts: Point[]): Point {
+  const [p0, p1, p2, p3] = pts;
+  const denom = (p0.x - p2.x) * (p1.y - p3.y) - (p0.y - p2.y) * (p1.x - p3.x);
+  if (Math.abs(denom) > 1e-4) {
+    const t = ((p0.x - p1.x) * (p1.y - p3.y) - (p0.y - p1.y) * (p1.x - p3.x)) / denom;
+    if (t > 0.05 && t < 0.95) {
+      return {
+        x: p0.x + t * (p2.x - p0.x),
+        y: p0.y + t * (p2.y - p0.y)
+      };
+    }
+  }
+  return {
+    x: (p0.x + p1.x + p2.x + p3.x) / 4,
+    y: (p0.y + p1.y + p2.y + p3.y) / 4
+  };
+}
+
+function getInnerHorizontalSpan(pts: Point[], cy: number): number {
+  const xs: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % 4];
+    if ((a.y <= cy && b.y >= cy) || (b.y <= cy && a.y >= cy)) {
+      if (Math.abs(b.y - a.y) > 1e-4) {
+        const x = a.x + ((cy - a.y) / (b.y - a.y)) * (b.x - a.x);
+        xs.push(x);
+      }
+    }
+  }
+  if (xs.length >= 2) {
+    xs.sort((a, b) => a - b);
+    return Math.max(40, xs[xs.length - 1] - xs[0]);
+  }
+  return 100;
+}
+
+function getInnerVerticalSpan(pts: Point[], cx: number): number {
+  const ys: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % 4];
+    if ((a.x <= cx && b.x >= cx) || (b.x <= cx && a.x >= cx)) {
+      if (Math.abs(b.x - a.x) > 1e-4) {
+        const y = a.y + ((cx - a.x) / (b.x - a.x)) * (b.y - a.y);
+        ys.push(y);
+      }
+    }
+  }
+  if (ys.length >= 2) {
+    ys.sort((a, b) => a - b);
+    return Math.max(40, ys[ys.length - 1] - ys[0]);
+  }
+  return 100;
+}
+
+// ========================================
 // DRAG SESSION
 // ========================================
 
@@ -339,33 +446,95 @@ function App() {
   };
 
   // --------------------------------------
+  // DYNAMIC HEADER MEASUREMENT & RESERVATION
+  // --------------------------------------
+
+  const headingText = surveyInfo.surveyNumber.trim();
+  const maxHeaderWidth = SVG_WIDTH - 240;
+  const headerFontSize = fitFontSize(headingText, maxHeaderWidth, 18, 14);
+  const headerLines = wrapText(
+    headingText,
+    Math.max(15, Math.floor(maxHeaderWidth / (headerFontSize * 0.58)))
+  );
+
+  const headerLineHeight = headerFontSize * 1.35;
+  const headerTextTop = 26;
+  const headerTextBottom = headerLines.length > 0
+    ? headerTextTop + (headerLines.length - 1) * headerLineHeight + headerFontSize
+    : 20;
+
+  // Reserved space for header with a clean margin
+  const HEADER_SPACE = Math.max(75, headerTextBottom + 25);
+  const BOTTOM_SPACE = 35;
+  const HORIZONTAL_MARGIN = 55;
+
+  // --------------------------------------
   // SVG COORDINATE TRANSFORMATION
   // --------------------------------------
 
-  const minWorldX = Math.min(...points.map(p => p.x));
-  const maxWorldX = Math.max(...points.map(p => p.x));
+  // Extended world bounds including quadrilateral, roads, and annotation lanes
+  const extWorldPoints: Point[] = [...points];
 
-  const minWorldY = Math.min(...points.map(p => p.y));
-  const maxWorldY = Math.max(...points.map(p => p.y));
+  const worldCenterX = points.reduce((sum, p) => sum + p.x, 0) / 4;
+  const worldCenterY = points.reduce((sum, p) => sum + p.y, 0) / 4;
 
-  const worldWidth = Math.max(maxWorldX - minWorldX, 1);
-  const worldHeight = Math.max(maxWorldY - minWorldY, 1);
+  points.forEach((p1, i) => {
+    const p2 = points[(i + 1) % 4];
+    const side = (["AB", "BC", "CD", "DA"] as const)[i];
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return;
+
+    const midX = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+
+    let nx = -(dy / len);
+    let ny = dx / len;
+    if (nx * (midX - worldCenterX) + ny * (midY - worldCenterY) < 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+
+    // Outward reach in world units: road width + annotation margin
+    const roadWidthWorld = roadSides[side] ? roadWidths[side] : 0;
+    const annotMarginWorld = roadSides[side] ? 2.5 : 4.0;
+    const totalOutward = roadWidthWorld + annotMarginWorld;
+
+    extWorldPoints.push(
+      { x: p1.x + nx * totalOutward, y: p1.y + ny * totalOutward },
+      { x: p2.x + nx * totalOutward, y: p2.y + ny * totalOutward }
+    );
+  });
+
+  const minExtX = Math.min(...extWorldPoints.map(p => p.x));
+  const maxExtX = Math.max(...extWorldPoints.map(p => p.x));
+  const minExtY = Math.min(...extWorldPoints.map(p => p.y));
+  const maxExtY = Math.max(...extWorldPoints.map(p => p.y));
+
+  const extWorldWidth = Math.max(maxExtX - minExtX, 1);
+  const extWorldHeight = Math.max(maxExtY - minExtY, 1);
+
+  const availableMapWidth = SVG_WIDTH - 2 * HORIZONTAL_MARGIN;
+  const availableMapHeight = SVG_HEIGHT - HEADER_SPACE - BOTTOM_SPACE;
 
   const calculatedScale = Math.min(
-    650 / worldWidth,
-    430 / worldHeight
+    availableMapWidth / extWorldWidth,
+    availableMapHeight / extWorldHeight
   );
 
-  const calculatedOffsetX =
-    (SVG_WIDTH - worldWidth * calculatedScale) / 2;
+  const minWorldX = Math.min(...points.map(p => p.x));
+  const maxWorldY = Math.max(...points.map(p => p.y));
 
-  const HEADER_SPACE = 85;
-  const BOTTOM_SPACE = 35;
+  const calculatedOffsetX =
+    HORIZONTAL_MARGIN +
+    (availableMapWidth - extWorldWidth * calculatedScale) / 2 +
+    (minWorldX - minExtX) * calculatedScale;
 
   const calculatedOffsetY =
     HEADER_SPACE +
-    (SVG_HEIGHT - HEADER_SPACE - BOTTOM_SPACE -
-      worldHeight * calculatedScale) / 2;
+    (availableMapHeight - extWorldHeight * calculatedScale) / 2 +
+    (maxExtY - maxWorldY) * calculatedScale;
 
   // Keep the canvas coordinate system stable while dragging.
 
@@ -1376,43 +1545,24 @@ function App() {
               )}
               {/* SURVEY MAP HEADING */}
 
-              {(() => {
-                const heading = `${surveyInfo.surveyNumber}`;
-
-                const maxWidth = SVG_WIDTH - 200;
-                const fontSize = fitFontSize(
-                  heading,
-                  maxWidth,
-                  20,
-                  17
-                );
-
-                const lines = wrapText(
-                  heading,
-                  Math.max(15, Math.floor(maxWidth / (fontSize * 0.65)))
-                );
-
-                return (
-                  <g pointerEvents="none">
-
-                    {lines.map((line, i) => (
-                      <text
-                        key={i}
-                        x={SVG_WIDTH / 2}
-                        y={35 + i * (fontSize * 1.4)}
-                        textAnchor="middle"
-                        fontFamily="Ranade, sans-serif"
-                        fontSize={fontSize}
-                        fontStyle="italic"
-                        fill="#222222"
-                      >
-                        {line}
-                      </text>
-                    ))}
-
-                  </g>
-                );
-              })()}
+              {headerLines.length > 0 && (
+                <g pointerEvents="none">
+                  {headerLines.map((line, i) => (
+                    <text
+                      key={i}
+                      x={SVG_WIDTH / 2}
+                      y={headerTextTop + i * headerLineHeight}
+                      textAnchor="middle"
+                      fontFamily="Ranade, sans-serif"
+                      fontSize={headerFontSize}
+                      fontStyle="italic"
+                      fill="#222222"
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
+              )}
               {/* ROADS */}
 
               {roads.map(road => (
@@ -1547,10 +1697,10 @@ function App() {
                 );
 
                 // Separate annotation lanes using the perpendicular normal.
-                const dimensionOffset = roadAttached ? -28 : 28;
-
-                const bearingOffset = dimensionOffset;
-                const lengthOffset = dimensionOffset + (roadAttached ? -17 : 17);
+                // When road is attached: bearing & length sit just inside the boundary line.
+                // When road is NOT attached: bearing & length sit just outside the boundary line.
+                const bearingOffset = roadAttached ? -12 : 14;
+                const lengthOffset = roadAttached ? -24 : 26;
 
                 const bearingX = midX + nx * bearingOffset;
                 const bearingY = midY + ny * bearingOffset;
@@ -1566,14 +1716,14 @@ function App() {
                   rotation += rotation > 90 ? -180 : 180;
                 }
 
-                // Neighbour text is placed in a completely separate lane.
+                // Neighbour text is placed outside the road (if attached) or outside length (if not).
                 const sideRoadWidthPx = roadAttached
                   ? roadWidths[side] * view.scale
                   : 0;
 
                 const neighbourOffset = roadAttached
-                  ? sideRoadWidthPx + 80
-                  : 80;
+                  ? sideRoadWidthPx + 20
+                  : 44;
 
                 const neighbourX = midX + nx * neighbourOffset;
                 const neighbourY = midY + ny * neighbourOffset;
@@ -1582,13 +1732,13 @@ function App() {
                 const neighbourFontSize = fitFontSize(
                   adjacentPlot,
                   length * 0.9,
-                  14,
-                  7
+                  13,
+                  8
                 );
 
-                // Road label.
+                // Road label placed centered in the road.
                 const roadNameOffset = roadAttached
-                  ? roadWidths[side] * view.scale * 0.75
+                  ? sideRoadWidthPx * 0.7
                   : 0;
 
                 const roadLabelX = midX + nx * roadNameOffset;
@@ -1723,172 +1873,117 @@ function App() {
 
               {(() => {
 
-                const centerX =
-                  transformed.reduce((sum, p) => sum + p.x, 0) / 4;
+                const center = getQuadCenter(transformed);
 
-                const centerY =
-                  transformed.reduce((sum, p) => sum + p.y, 0) / 4;
+                // Calculate horizontal and vertical clearances around the center
+                const horizSpanMid = getInnerHorizontalSpan(transformed, center.y);
+                const vertSpanMid = getInnerVerticalSpan(transformed, center.x);
 
-                const horizontalWidth = Math.min(
-                  distance(points[0], points[1]),
-                  distance(points[2], points[3])
-                ) * view.scale;
+                const horizSpanTop = getInnerHorizontalSpan(
+                  transformed,
+                  center.y - vertSpanMid * 0.22
+                );
+                const horizSpanBottom = getInnerHorizontalSpan(
+                  transformed,
+                  center.y + vertSpanMid * 0.22
+                );
+                const effHorizSpan = Math.min(
+                  horizSpanMid,
+                  horizSpanTop,
+                  horizSpanBottom
+                );
 
-                const verticalWidth = Math.min(
-                  distance(points[1], points[2]),
-                  distance(points[3], points[0])
-                ) * view.scale;
+                const vertSpanLeft = getInnerVerticalSpan(
+                  transformed,
+                  center.x - effHorizSpan * 0.22
+                );
+                const vertSpanRight = getInnerVerticalSpan(
+                  transformed,
+                  center.x + effHorizSpan * 0.22
+                );
+                const effVertSpan = Math.min(
+                  vertSpanMid,
+                  vertSpanLeft,
+                  vertSpanRight
+                );
 
-                const usableWidth =
-                  Math.min(horizontalWidth, verticalWidth) * 0.88;
+                // Usable dimensions adapting dynamically to the quadrilateral's true interior space
+                const usableWidth = Math.max(60, effHorizSpan * 0.82);
 
-                const maxFontSize = 32;
-                const minFontSize = 12;
+                const hasRoad = Object.values(roadSides).some(Boolean);
+                const vertSafety = hasRoad ? 0.70 : 0.76;
+                const usableHeight = Math.max(45, effVertSpan * vertSafety);
 
-                // Word-based wrapping instead of splitting words by characters.
-                const wrapWords = (
-                  text: string,
-                  maxWidth: number,
-                  fontSize: number
-                ) => {
+                const areaText = `${convertArea(area, unit).toFixed(2)} ${unit === "m" ? "m²" : "ft²"}`;
+                const areaFontSize = Math.min(15, Math.max(10, usableHeight * 0.16));
+                const gap = Math.min(10, Math.max(4, usableHeight * 0.08));
+                const availableForPlot = Math.max(20, usableHeight - areaFontSize - gap);
 
-                  const approximateCharWidth = fontSize * 0.58;
+                const plotText = surveyInfo.plotNumber.trim();
 
-                  const maxChars = Math.max(
-                    1,
-                    Math.floor(maxWidth / approximateCharWidth)
-                  );
+                let fittedFontSize = 10;
+                let lines: string[] = [plotText];
 
-                  const words = text.trim().split(/\s+/);
+                if (plotText) {
+                  const maxFontSize = Math.min(26, Math.max(12, usableHeight * 0.26));
+                  const minFontSize = 9.5;
 
-                  const lines: string[] = [];
-                  let currentLine = "";
-
-                  words.forEach(word => {
-
-                    const testLine = currentLine
-                      ? `${currentLine} ${word}`
-                      : word;
-
-                    if (testLine.length <= maxChars) {
-
-                      currentLine = testLine;
-
-                    } else {
-
-                      if (currentLine) {
-                        lines.push(currentLine);
-                      }
-
-                      currentLine = word;
-
+                  for (let fs = maxFontSize; fs >= minFontSize; fs -= 0.5) {
+                    const candidateLines = wrapWords(plotText, usableWidth, fs);
+                    const candidateHeight = candidateLines.length * (fs * 1.28);
+                    if (candidateHeight <= availableForPlot) {
+                      fittedFontSize = fs;
+                      lines = candidateLines;
+                      break;
                     }
-
-                  });
-
-                  if (currentLine) {
-                    lines.push(currentLine);
-                  }
-
-                  return lines;
-
-                };
-
-                let fittedFontSize = maxFontSize;
-                let lines: string[] = [];
-
-                // Try progressively smaller text until the text block fits.
-                for (
-                  let fontSize = maxFontSize;
-                  fontSize >= minFontSize;
-                  fontSize -= 1
-                ) {
-
-                  const candidateLines = wrapWords(
-                    surveyInfo.plotNumber,
-                    usableWidth,
-                    fontSize
-                  );
-
-                  if (candidateLines.length <= 8) {
-
-                    fittedFontSize = fontSize;
+                    fittedFontSize = fs;
                     lines = candidateLines;
-
-                    break;
-
                   }
 
+                  const minLineHeight = fittedFontSize * 1.25;
+                  if (lines.length * minLineHeight > availableForPlot) {
+                    fittedFontSize = Math.max(8.5, availableForPlot / (lines.length * 1.25));
+                  }
+                } else {
+                  lines = [];
                 }
 
-                // Fallback if even the smallest size needs more lines.
-                if (lines.length === 0) {
-
-                  fittedFontSize = minFontSize;
-
-                  lines = wrapWords(
-                    surveyInfo.plotNumber,
-                    usableWidth,
-                    fittedFontSize
-                  );
-
-                }
-
-                const lineHeight = fittedFontSize * 1.25;
-
-                const areaFontSize = 16;
-
-                const textHeight =
-                  lines.length * lineHeight;
-
+                const lineHeight = fittedFontSize * 1.28;
+                const plotBlockHeight = lines.length * lineHeight;
                 const totalBlockHeight =
-                  textHeight + areaFontSize + 8;
-
-                const startY =
-                  centerY - totalBlockHeight / 2;
+                  plotBlockHeight + (lines.length > 0 ? gap : 0) + areaFontSize;
+                const startY = center.y - totalBlockHeight / 2;
 
                 return (
 
                   <g pointerEvents="none">
 
-                    {/* Plot number */}
+                    {/* Plot number / description */}
+
+                    {lines.map((line, i) => (
+                      <text
+                        key={i}
+                        x={center.x}
+                        y={startY + (i + 0.82) * lineHeight}
+                        textAnchor="middle"
+                        fontFamily="Ranade, sans-serif"
+                        fontSize={fittedFontSize}
+                        fontStyle="italic"
+                        fill="#222222"
+                      >
+                        {line}
+                      </text>
+                    ))}
+
+                    {/* Area measurement - strictly separated below plot text */}
 
                     <text
-                      x={centerX}
-                      textAnchor="middle"
-                      fontFamily="Ranade, sans-serif"
-                      fontSize={fittedFontSize}
-                      fontStyle="italic"
-                      fill="#222222"
-                    >
-
-                      {lines.map((line, i) => (
-
-                        <tspan
-                          key={i}
-                          x={centerX}
-                          y={
-                            startY +
-                            fittedFontSize +
-                            i * lineHeight
-                          }
-                        >
-                          {line}
-                        </tspan>
-
-                      ))}
-
-                    </text>
-
-                    {/* Area */}
-
-                    <text
-                      x={centerX}
+                      x={center.x}
                       y={
                         startY +
-                        textHeight +
-                        areaFontSize +
-                        8
+                        plotBlockHeight +
+                        (lines.length > 0 ? gap : 0) +
+                        areaFontSize * 0.85
                       }
                       textAnchor="middle"
                       fontFamily="Ranade, sans-serif"
@@ -1896,9 +1991,7 @@ function App() {
                       fontStyle="italic"
                       fill="#222222"
                     >
-                      {convertArea(area, unit).toFixed(2)}
-                      {" "}
-                      {unit === "m" ? "m²" : "ft²"}
+                      {areaText}
                     </text>
 
                   </g>
