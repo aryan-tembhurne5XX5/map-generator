@@ -1609,7 +1609,7 @@ function App() {
                         fontFamily="Ranade, sans-serif"
                         fontSize="12"
                         fontStyle="italic"
-                        fill="#222222"
+                        fill="#ffffff"
                         transform={`rotate(${rotation}, ${roadLabelX}, ${roadLabelY})`}
                       >
                         {roadName.toUpperCase()}
